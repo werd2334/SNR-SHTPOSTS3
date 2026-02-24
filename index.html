@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SNR-SHTPOSTS</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+
+<style>
+body { margin:0; background:#0f0f0f; color:white; font-family:Arial; overflow-x:hidden; }
+header { text-align:center; padding:20px; font-size:26px; background:black; }
+
+.top-buttons{ display:flex; gap:10px; padding:10px 15px; }
+.top-buttons button{ background:black; color:white; border:1px solid white; padding:6px 12px; cursor:pointer; }
+
+.info-panel{ background:#1a1a1a; overflow:hidden; max-height:0; transition:max-height 0.4s ease; padding:0 20px; }
+.info-panel.active{ max-height:300px; padding:15px 20px; }
+
+.choice { display:flex; flex-wrap:wrap; justify-content:center; gap:15px; padding:20px; }
+.choice button { padding:10px 20px; background:black; color:white; border:1px solid white; cursor:pointer; }
+
+.feed { display:none; flex-direction:column; align-items:center; gap:25px; padding:20px; }
+
+.card { width:400px; background:#1a1a1a; border-radius:12px; overflow:hidden; position:relative; }
+
+.card img, .card video {
+ width:100%; height:400px;
+ object-fit:contain;
+ background:black;
+ cursor:pointer;
+}
+
+.video-progress {
+ position:absolute;
+ bottom:0;
+ left:0;
+ height:4px;
+ background:red;
+ width:0%;
+}
+
+.viewer {
+ position:fixed;
+ inset:0;
+ background:black;
+ display:flex;
+ justify-content:center;
+ align-items:center;
+ opacity:0;
+ pointer-events:none;
+ transition:0.2s ease;
+ z-index:1000;
+}
+.viewer.active { opacity:1; pointer-events:auto; }
+
+.viewer img {
+ max-width:95%;
+ max-height:85%;
+ transition:transform 0.2s ease;
+ touch-action:none;
+}
+
+.viewer video {
+ max-width:95%;
+ max-height:85%;
+}
+
+.close {
+ position:absolute;
+ top:20px;
+ left:20px;
+ font-size:28px;
+ cursor:pointer;
+}
+
+.counter {
+ position:absolute;
+ top:20px;
+ right:20px;
+ background:rgba(0,0,0,0.6);
+ padding:6px 10px;
+ border-radius:8px;
+ font-size:14px;
+}
+
+.next-preview {
+ position:absolute;
+ bottom:20px;
+ right:20px;
+ width:80px;
+ height:80px;
+ border:1px solid white;
+ border-radius:8px;
+ overflow:hidden;
+ opacity:0.8;
+}
+.next-preview img{
+ width:100%;
+ height:100%;
+ object-fit:cover;
+}
+
+.to-top{
+ position:fixed;
+ bottom:20px;
+ right:20px;
+ background:black;
+ color:white;
+ border:1px solid white;
+ padding:8px 12px;
+ cursor:pointer;
+ display:none;
+}
+
+.modal{
+ position:fixed;
+ inset:0;
+ background:rgba(0,0,0,0.7);
+ display:flex;
+ justify-content:center;
+ align-items:center;
+ z-index:2000;
+ display:none;
+}
+.modal-box{
+ background:#1a1a1a;
+ padding:20px;
+ border:1px solid white;
+ text-align:center;
+}
+.modal button{
+ margin:10px;
+ padding:6px 12px;
+ background:black;
+ color:white;
+ border:1px solid white;
+ cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<header>SNR-SHTPOSTS</header>
+
+<div class="top-buttons">
+<button onclick="toggleInfo()">Информация</button>
+<button id="installBtn">Установить приложение</button>
+<button onclick="showDev()">Уведомления</button>
+</div>
+
+<div class="info-panel" id="infoPanel">
+<p>
+Этот сайт создан Бонго с частичным использованием нейросетей.
+Суть сайта это щитпосты на тему
+<a href="https://t.me/SNR_NPR_UNIVERSE" target="_blank">
+вселенной Северной Народной Республики
+</a>.
+Сайт обновляется на момент
+<span id="currentDate"></span>.
+</p>
+</div>
+
+<div class="choice">
+<button onclick="loadPhotos()">Все фото</button>
+<button onclick="loadVideos()">Все видео</button>
+<button onclick="randomPhoto()">Рандомное фото</button>
+<button onclick="randomVideo()">Рандомное видео</button>
+</div>
+
+<div class="feed" id="feed"></div>
+
+<div class="viewer" id="viewer">
+<div class="close" onclick="closeViewer()">←</div>
+<div class="counter" id="counter"></div>
+<img id="viewerImg">
+<video id="viewerVideo" controls></video>
+<div class="next-preview" id="nextPreview">
+<img id="nextImg">
+</div>
+</div>
+
+<button class="to-top" id="toTop">↑</button>
+
+<div class="modal" id="modal">
+<div class="modal-box" id="modalBox"></div>
+</div>
+
+<script>
+
+const TOTAL_MEMES = 12;
+const TOTAL_VIDEOS = 2;
+
+const feed = document.getElementById("feed");
+const viewer = document.getElementById("viewer");
+const viewerImg = document.getElementById("viewerImg");
+const viewerVideo = document.getElementById("viewerVideo");
+const counter = document.getElementById("counter");
+const nextImg = document.getElementById("nextImg");
+const nextPreview = document.getElementById("nextPreview");
+const modal = document.getElementById("modal");
+const modalBox = document.getElementById("modalBox");
+
+document.getElementById("currentDate").textContent =
+new Date().toLocaleDateString("ru-RU");
+
+let currentPhotoIndex = 0;
+let deferredPrompt;
+
+/* INFO */
+function toggleInfo(){ document.getElementById("infoPanel").classList.toggle("active"); }
+
+/* INSTALL */
+window.addEventListener("beforeinstallprompt",(e)=>{ e.preventDefault(); deferredPrompt=e; });
+
+document.getElementById("installBtn").onclick=()=>{
+ modalBox.innerHTML=`
+ <p>Вы хотите установить безопасное приложение сайта?</p>
+ <button onclick="confirmInstall()">гойДА</button>
+ <button onclick="closeModal()">Неь</button>`;
+ modal.style.display="flex";
+};
+
+function confirmInstall(){ if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt=null; } closeModal(); }
+function showDev(){ modalBox.innerHTML=`<p>В разработке</p><button onclick="closeModal()">Ок</button>`; modal.style.display="flex"; }
+function closeModal(){ modal.style.display="none"; }
+
+/* PRELOAD */
+function preloadNext(){
+ const nextIndex=currentPhotoIndex%TOTAL_MEMES+1;
+ const img=new Image();
+ img.src=`memes/meme (${nextIndex}).jpg`;
+}
+
+/* UPDATE UI */
+function updatePhotoUI(){
+ counter.innerText=currentPhotoIndex+" / "+TOTAL_MEMES;
+ const nextIndex=currentPhotoIndex%TOTAL_MEMES+1;
+ nextImg.src=`memes/meme (${nextIndex}).jpg`;
+ nextPreview.style.display="block";
+ preloadNext();
+}
+
+/* LOAD PHOTOS */
+function loadPhotos(){
+ feed.innerHTML="";
+ feed.style.display="flex";
+
+ for(let i=1;i<=TOTAL_MEMES;i++){
+  const card=document.createElement("div");
+  card.className="card";
+
+  const img=document.createElement("img");
+  img.src=`memes/meme (${i}).jpg`;
+  img.loading="lazy";
+
+  img.onclick=()=>{
+   currentPhotoIndex=i;
+   viewer.classList.add("active");
+   viewerImg.style.display="block";
+   viewerVideo.style.display="none";
+   viewerImg.src=img.src;
+   updatePhotoUI();
+  };
+
+  card.appendChild(img);
+  feed.appendChild(card);
+ }
+}
+
+/* LOAD VIDEOS */
+function loadVideos(){
+ feed.innerHTML="";
+ feed.style.display="flex";
+
+ for(let i=1;i<=TOTAL_VIDEOS;i++){
+  const card=document.createElement("div");
+  card.className="card";
+
+  const video=document.createElement("video");
+  video.src=`videos/video (${i}).mp4`;
+  video.preload="metadata";
+
+  const progress=document.createElement("div");
+  progress.className="video-progress";
+
+  video.ontimeupdate=()=>{
+   const percent=(video.currentTime/video.duration)*100;
+   progress.style.width=percent+"%";
+   localStorage.setItem("video_progress_"+i,video.currentTime);
+  };
+
+  video.onloadedmetadata=()=>{
+   const saved=localStorage.getItem("video_progress_"+i);
+   if(saved) video.currentTime=saved;
+  };
+
+  video.ondblclick=(e)=>{
+   if(e.offsetX<video.clientWidth/2) video.currentTime-=10;
+   else video.currentTime+=10;
+  };
+
+  card.appendChild(video);
+  card.appendChild(progress);
+  feed.appendChild(card);
+ }
+}
+
+function randomPhoto(){
+ const i=Math.floor(Math.random()*TOTAL_MEMES)+1;
+ currentPhotoIndex=i;
+ viewer.classList.add("active");
+ viewerImg.style.display="block";
+ viewerVideo.style.display="none";
+ viewerImg.src=`memes/meme (${i}).jpg`;
+ updatePhotoUI();
+}
+
+function randomVideo(){
+ const i=Math.floor(Math.random()*TOTAL_VIDEOS)+1;
+ viewer.classList.add("active");
+ viewerImg.style.display="none";
+ viewerVideo.style.display="block";
+ viewerVideo.src=`videos/video (${i}).mp4`;
+ counter.innerText=i+" / "+TOTAL_VIDEOS;
+ nextPreview.style.display="none";
+}
+
+/* SWIPE */
+let startX=0,currentTranslate=0,dragging=false;
+
+viewerImg.addEventListener("pointerdown",e=>{
+ dragging=true; startX=e.clientX; viewerImg.style.transition="none";
+});
+viewerImg.addEventListener("pointermove",e=>{
+ if(!dragging) return;
+ currentTranslate=e.clientX-startX;
+ viewerImg.style.transform=`translateX(${currentTranslate}px)`;
+});
+viewerImg.addEventListener("pointerup",()=>{
+ if(!dragging) return;
+ dragging=false;
+ viewerImg.style.transition="transform 0.2s ease";
+
+ if(Math.abs(currentTranslate)>window.innerWidth/4){
+  if(currentTranslate<0)
+   currentPhotoIndex=currentPhotoIndex%TOTAL_MEMES+1;
+  else
+   currentPhotoIndex=(currentPhotoIndex-2+TOTAL_MEMES)%TOTAL_MEMES+1;
+
+  viewerImg.src=`memes/meme (${currentPhotoIndex}).jpg`;
+  updatePhotoUI();
+ }
+
+ viewerImg.style.transform="translateX(0)";
+ currentTranslate=0;
+});
+
+function closeViewer(){ viewer.classList.remove("active"); viewerVideo.pause(); }
+
+window.addEventListener("scroll",()=>{
+ document.getElementById("toTop").style.display=
+ window.scrollY>300?"block":"none";
+});
+document.getElementById("toTop").onclick=
+()=>window.scrollTo({top:0,behavior:"smooth"});
+
+/* SERVICE WORKER */
+if('serviceWorker' in navigator){
+ navigator.serviceWorker.register('service-worker.js').then(reg=>{
+  reg.addEventListener('updatefound',()=>{
+   const newWorker=reg.installing;
+   newWorker.addEventListener('statechange',()=>{
+    if(newWorker.state==='installed' && navigator.serviceWorker.controller){
+     window.location.reload();
+    }
+   });
+  });
+ });
+}
+
+</script>
+</body>
+</html>
